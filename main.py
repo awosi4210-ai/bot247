@@ -88,49 +88,49 @@ class AliveBot:
         return self.send_packet(0x04, self.write_varint(0))
     
     def listen_for_packets(self):
-        """Listen for server packets and react"""
-        buffer = bytearray()
-        
-        while self.running and self.connected:
-            try:
-                self.sock.settimeout(25)
-                data = self.sock.recv(4096)
-                
-                if not data:
-                    print("[-] Server closed connection")
-                    self.connected = False
-                    break
-                
-                buffer.extend(data)
-                
-                # Parse packets
-                while len(buffer) > 0:
-                    # Read packet length
-                    length, pos = self.read_varint_from_buffer(buffer, 0)
-                    if length is None or len(buffer) < pos + length:
+            """Listen for server packets and react"""
+            buffer = bytearray()
+            
+            while self.running and self.connected:
+                try:
+                    self.sock.settimeout(30)
+                    try:
+                        data = self.sock.recv(4096)
+                    except socket.timeout:
+                        # Timeout normal hai, keep-alive bhejo
+                        self.keep_alive_send()
+                        continue
+                        
+                    if not data:
+                        print("[-] Server closed connection (empty data)")
+                        self.connected = False
                         break
                     
-                    packet_data = buffer[pos:pos + length]
-                    buffer = buffer[pos + length:]
+                    buffer.extend(data)
+                    print(f"[*] Received {len(data)} bytes from server")
                     
-                    # Read packet ID
-                    packet_id, offset = self.read_varint_from_buffer(packet_data, 0)
-                    if packet_id is None:
-                        continue
+                    # Simple approach: sirf connection alive rakho
+                    # Protocol parsing skip karo, sirf keep-alive bhejo
+                    self.keep_alive_send()
                     
-                    self.handle_packet(packet_id, packet_data[offset:])
-                    
-            except socket.timeout:
-                # Timeout - send keep-alive
-                self.keep_alive_send()
-                continue
-            except Exception as e:
-                print(f"[-] Listen error: {e}")
-                self.connected = False
-                break
-        
-        if self.running:
-            self.reconnect_to_server()
+                    # Buffer ko clear karo periodically
+                    if len(buffer) > 1024:
+                        buffer = bytearray()
+                        
+                except socket.timeout:
+                    self.keep_alive_send()
+                    continue
+                except ConnectionResetError:
+                    print("[-] Connection reset by server")
+                    self.connected = False
+                    break
+                except Exception as e:
+                    print(f"[-] Listen error: {e}")
+                    self.connected = False
+                    break
+            
+            if self.running:
+                self.reconnect_to_server()
     
     def read_varint_from_buffer(self, buffer, offset):
         """Read varint from buffer"""
